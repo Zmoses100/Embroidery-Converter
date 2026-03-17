@@ -3,7 +3,7 @@ nixPkgs = ['python311', 'python311Packages.pip']
 
 [phases.install]
 cmds = [
-    'mkdir -p storage/framework/{sessions,views,cache/data} storage/app/public bootstrap/cache',
+    'mkdir -p storage/framework/{sessions,views,cache/data,testing} storage/app/public bootstrap/cache',
     'cp .env.example .env || true',
     'composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs',
     'php artisan key:generate --force || true',
