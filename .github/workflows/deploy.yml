@@ -1,17 +1,1 @@
-name: Deploy to Hostinger VPS
 
-on:
- push:
- branches:
- - main
-
-jobs:
- deploy:
- runs-on: ubuntu-latest
- steps:
- - name: Deploy
- uses: hostinger/deploy-on-hostinger-vps@v1
- with:
- hostinger_api_key: ${{ secrets.HOSTINGER_API_KEY }}
- virtual_machine_id: "1499401"
- compose_file_path: "docker-compose.yml"
