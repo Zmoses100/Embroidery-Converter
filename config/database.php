@@ -26,7 +26,7 @@ return [
             'database' => env('DB_DATABASE', 'embroidery_converter'),
             'username' => env('DB_USERNAME', 'postgres'),
             'password' => env('DB_PASSWORD', ''),
-            'charset' => env('DB_CHARSET', 'utf8'),
+            'charset' => env('DB_CHARSET', 'UTF8'),
             'prefix' => '',
             'prefix_indexes' => true,
             'search_path' => 'public',
