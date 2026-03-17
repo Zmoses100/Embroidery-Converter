@@ -25,12 +25,21 @@ class PlanController extends Controller
         $user     = $request->user();
         $interval = $request->input('interval', 'monthly');
 
+        // Free plans don't require Stripe checkout
+        if ($plan->isFree()) {
+            if ($user->subscribed('default')) {
+                $user->subscription('default')->cancel();
+            }
+
+            return redirect()->route('dashboard')->with('success', 'You are now on the Free plan.');
+        }
+
         $priceId = $interval === 'yearly'
             ? $plan->stripe_yearly_price_id
             : $plan->stripe_monthly_price_id;
 
         if (!$priceId) {
-            return back()->withErrors(['plan' => 'This plan is not available for checkout.']);
+            return back()->withErrors(['plan' => 'This plan is not yet available for checkout. Please contact the administrator to configure pricing.']);
         }
 
         // If user already has a subscription, swap to the new plan
