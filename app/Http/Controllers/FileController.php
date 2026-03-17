@@ -204,10 +204,20 @@ class FileController extends Controller
             abort(500, 'Could not create ZIP file.');
         }
 
+        $usedNames = [];
         foreach ($files as $file) {
             $absPath = Storage::disk($file->disk)->path($file->path);
             if (file_exists($absPath)) {
-                $zip->addFile($absPath, $file->original_name);
+                $zipName = $file->original_name;
+                if (isset($usedNames[$zipName])) {
+                    $usedNames[$zipName]++;
+                    $ext = pathinfo($zipName, PATHINFO_EXTENSION);
+                    $base = pathinfo($zipName, PATHINFO_FILENAME);
+                    $zipName = $base . '_' . $usedNames[$zipName] . '.' . $ext;
+                } else {
+                    $usedNames[$zipName] = 1;
+                }
+                $zip->addFile($absPath, $zipName);
             }
         }
 

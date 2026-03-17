@@ -20,11 +20,11 @@ class CheckSubscription
         $plan = $user->activePlan();
 
         // If a specific feature is required, check it
-        if ($feature && $plan) {
+        if ($feature) {
             $allowed = match ($feature) {
-                'api'      => $plan->api_access,
-                'preview'  => $plan->preview_enabled,
-                'batch'    => $plan->max_batch_size > 1,
+                'api'      => $plan?->api_access ?? false,
+                'preview'  => $plan?->preview_enabled ?? false,
+                'batch'    => ($plan?->max_batch_size ?? 0) > 1,
                 default    => true,
             };
 

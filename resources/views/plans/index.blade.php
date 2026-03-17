@@ -54,10 +54,13 @@
                                 Current Plan
                             </button>
                         @else
-                            <a href="{{ route('subscription.cancel') }}"
-                               class="block w-full text-center py-3 bg-gray-100 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-200 transition-colors">
-                                Downgrade to Free
-                            </a>
+                            <form method="POST" action="{{ route('subscription.cancel') }}">
+                                @csrf
+                                <button type="submit"
+                                        class="w-full py-3 bg-gray-100 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-200 transition-colors">
+                                    Downgrade to Free
+                                </button>
+                            </form>
                         @endif
                     @else
                         <form method="POST" action="{{ route('subscription.checkout', $plan) }}">
