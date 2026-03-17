@@ -23,7 +23,7 @@ class ConversionUsage extends Model
      */
     public static function increment(int $userId): void
     {
-        static::updateOrCreate(
+        static::firstOrCreate(
             ['user_id' => $userId, 'date' => today()->toDateString()],
             ['count'   => 0]
         );

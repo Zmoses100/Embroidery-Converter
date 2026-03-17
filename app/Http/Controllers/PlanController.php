@@ -43,7 +43,7 @@ class PlanController extends Controller
         // New subscription - create Stripe checkout session
         return $user->newSubscription('default', $priceId)
             ->checkout([
-                'success_url' => route('plans.success') . '?session_id={CHECKOUT_SESSION_ID}',
+                'success_url' => route('subscription.success') . '?session_id={CHECKOUT_SESSION_ID}',
                 'cancel_url'  => route('plans.index'),
                 'customer_email' => $user->email,
             ]);
