@@ -104,6 +104,12 @@
             @endforeach
         </div>
 
+        <div>
+            <label class="block text-sm font-medium text-gray-700">Sort Order</label>
+            <input type="number" name="sort_order" min="0" value="{{ old('sort_order', $plan->sort_order ?? 0) }}"
+                   class="mt-1 w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500">
+        </div>
+
         <div class="flex gap-3 pt-2">
             <button type="submit" class="px-6 py-2.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors">
                 {{ $plan->exists ? 'Update Plan' : 'Create Plan' }}

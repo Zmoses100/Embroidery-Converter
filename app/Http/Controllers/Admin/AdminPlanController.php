@@ -22,7 +22,7 @@ class AdminPlanController extends Controller
 
     public function store(Request $request)
     {
-        $data = $this->validate($request);
+        $data = $this->validatePlan($request);
         Plan::create($data);
 
         return redirect()->route('admin.plans.index')->with('success', 'Plan created successfully.');
@@ -35,7 +35,7 @@ class AdminPlanController extends Controller
 
     public function update(Request $request, Plan $plan)
     {
-        $data = $this->validate($request);
+        $data = $this->validatePlan($request);
         $plan->update($data);
 
         return redirect()->route('admin.plans.index')->with('success', 'Plan updated successfully.');
@@ -48,9 +48,9 @@ class AdminPlanController extends Controller
         return redirect()->route('admin.plans.index')->with('success', 'Plan deleted.');
     }
 
-    private function validate(Request $request): array
+    private function validatePlan(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'name'                   => 'required|string|max:100',
             'slug'                   => 'required|string|alpha_dash|max:50',
             'description'            => 'nullable|string|max:500',
@@ -70,5 +70,14 @@ class AdminPlanController extends Controller
             'is_featured'            => 'boolean',
             'sort_order'             => 'integer|min:0',
         ]);
+
+        // Unchecked checkboxes are not sent in HTML forms, so explicitly
+        // set boolean fields to false when they are absent from the request.
+        $booleanFields = ['preview_enabled', 'history_enabled', 'api_access', 'priority_queue', 'is_active', 'is_featured'];
+        foreach ($booleanFields as $field) {
+            $data[$field] = $request->boolean($field);
+        }
+
+        return $data;
     }
 }
