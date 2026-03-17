@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ['php83', 'php83Packages.composer', 'python311', 'python311Packages.pip']
+nixPkgs = ['php83', 'php83Packages.composer', 'php83Extensions.pgsql', 'php83Extensions.pdo_pgsql', 'python311', 'python311Packages.pip']
 
 [phases.install]
 cmds = [

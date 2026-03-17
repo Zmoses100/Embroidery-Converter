@@ -28,7 +28,7 @@ class FileController extends Controller
         $user = $request->user();
 
         $query = $user->embroideryFiles()
-            ->when($request->search, fn($q, $s) => $q->where('original_name', 'like', "%{$s}%"))
+            ->when($request->search, fn($q, $s) => $q->where('original_name', 'ilike', "%{$s}%"))
             ->when($request->type, fn($q, $t) => $q->where('type', $t))
             ->when($request->format, fn($q, $f) => $q->where('extension', $f))
             ->latest();

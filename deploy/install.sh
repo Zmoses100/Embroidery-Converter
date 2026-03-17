@@ -49,15 +49,14 @@ sed -i "s/memory_limit = .*/memory_limit = 256M/" /etc/php/${PHP_VERSION}/fpm/ph
 
 systemctl restart php${PHP_VERSION}-fpm
 
-# ── Step 3: MySQL ─────────────────────────────────────────────────────────────
-echo "[3/8] Installing MySQL..."
-apt-get install -y -qq mysql-server
+# ── Step 3: PostgreSQL ─────────────────────────────────────────────────────────
+echo "[3/8] Installing PostgreSQL..."
+apt-get install -y -qq postgresql postgresql-contrib
 
 DB_PASS=$(openssl rand -base64 16 | tr -d '/+=')
-mysql -e "CREATE DATABASE IF NOT EXISTS embroidery_converter DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-mysql -e "CREATE USER IF NOT EXISTS 'embroidery'@'localhost' IDENTIFIED BY '${DB_PASS}';"
-mysql -e "GRANT ALL PRIVILEGES ON embroidery_converter.* TO 'embroidery'@'localhost';"
-mysql -e "FLUSH PRIVILEGES;"
+sudo -u postgres psql -c "CREATE USER embroidery WITH PASSWORD '${DB_PASS}';"
+sudo -u postgres psql -c "CREATE DATABASE embroidery_converter OWNER embroidery;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE embroidery_converter TO embroidery;"
 
 echo "Database credentials:"
 echo "  Name:     embroidery_converter"
@@ -105,7 +104,9 @@ if [ ! -f .env ]; then
 fi
 
 # Update database credentials
-sed -i "s/DB_CONNECTION=.*/DB_CONNECTION=mysql/" .env
+sed -i "s/DB_CONNECTION=.*/DB_CONNECTION=pgsql/" .env
+sed -i "s/DB_HOST=.*/DB_HOST=127.0.0.1/" .env
+sed -i "s/DB_PORT=.*/DB_PORT=5432/" .env
 sed -i "s/DB_DATABASE=.*/DB_DATABASE=embroidery_converter/" .env
 sed -i "s/DB_USERNAME=.*/DB_USERNAME=embroidery/" .env
 sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=${DB_PASS}/" .env

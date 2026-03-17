@@ -37,20 +37,19 @@ services:
     depends_on:
       - app
 
-  # MySQL database
+  # PostgreSQL database
   db:
-    image: mysql:8.0
+    image: postgres:16-alpine
     container_name: embroidery_db
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: embroidery_converter
-      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: embroidery_converter
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - embroidery_db_data:/var/lib/mysql
+      - embroidery_db_data:/var/lib/postgresql/data
     ports:
-      - "3306:3306"
+      - "5432:5432"
     networks:
       - embroidery_net
 

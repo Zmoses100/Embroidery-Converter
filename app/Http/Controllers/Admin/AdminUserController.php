@@ -12,7 +12,7 @@ class AdminUserController extends Controller
     {
         $users = User::withTrashed()
             ->when($request->search, fn($q, $s) => $q->where(function($qq) use ($s) {
-                $qq->where('name', 'like', "%{$s}%")->orWhere('email', 'like', "%{$s}%");
+                $qq->where('name', 'ilike', "%{$s}%")->orWhere('email', 'ilike', "%{$s}%");
             }))
             ->when($request->filter === 'admin', fn($q) => $q->where('is_admin', true))
             ->when($request->filter === 'deleted', fn($q) => $q->onlyTrashed())
