@@ -4,11 +4,11 @@ nixPkgs = ['php83', 'php83Packages.composer', 'php83Extensions.pgsql', 'php83Ext
 [phases.install]
 cmds = [
     'mkdir -p storage/framework/{sessions,views,cache/data,testing} storage/app/public bootstrap/cache',
-    'cp .env.example .env || true',
+    'test -f .env || echo "APP_KEY=" > .env',
     'composer install --no-interaction --prefer-dist --optimize-autoloader --ignore-platform-reqs',
     'php artisan key:generate --force || true',
     'pip install pyembroidery || true',
 ]
 
 [start]
-cmd = 'php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}'
+cmd = 'php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=${PORT:-8080}'
