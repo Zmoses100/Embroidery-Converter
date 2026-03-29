@@ -78,7 +78,30 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         // Free plan
-        return Plan::where('slug', 'free')->first();
+        $freePlan = Plan::where('slug', 'free')->first();
+
+        if ($freePlan) {
+            return $freePlan;
+        }
+
+        // Ensure we always have a baseline plan to prevent null access / 500s
+        return Plan::firstOrCreate(
+            ['slug' => 'free'],
+            [
+                'name'                => 'Free',
+                'price_monthly'       => 0,
+                'price_yearly'        => 0,
+                'conversions_per_day' => 5,
+                'storage_limit_mb'    => 100,
+                'max_file_size_mb'    => 5,
+                'max_batch_size'      => 1,
+                'priority_queue'      => false,
+                'preview_enabled'     => false,
+                'api_access'          => false,
+                'is_active'           => true,
+                'sort_order'          => 1,
+            ]
+        );
     }
 
     /**
@@ -86,9 +109,14 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function todayConversionCount(): int
     {
-        return ConversionUsage::where('user_id', $this->id)
-            ->where('date', today()->toDateString())
-            ->value('count') ?? 0;
+        try {
+            return ConversionUsage::where('user_id', $this->id)
+                ->where('date', today()->toDateString())
+                ->value('count') ?? 0;
+        } catch (\Throwable $e) {
+            // Gracefully handle missing table during first-run / misconfigured environments
+            return 0;
+        }
     }
 
     /**
@@ -108,7 +136,12 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function storageUsedBytes(): int
     {
-        return (int) $this->embroideryFiles()->sum('size_bytes');
+        try {
+            return (int) $this->embroideryFiles()->sum('size_bytes');
+        } catch (\Throwable $e) {
+            // Gracefully handle missing table during first-run / misconfigured environments
+            return 0;
+        }
     }
 
     /**

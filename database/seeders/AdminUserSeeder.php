@@ -11,19 +11,23 @@ class AdminUserSeeder extends Seeder
     public function run(): void
     {
         $adminEmail = env('ADMIN_EMAIL', 'admin@example.com');
+        $adminPassword = env('ADMIN_PASSWORD', 'password');
 
-        User::updateOrCreate(
-            ['email' => $adminEmail],
-            [
-                'name'              => 'Admin',
-                'email'             => $adminEmail,
-                'password'          => Hash::make('password'),
-                'is_admin'          => true,
-                'email_verified_at' => now(),
-            ]
-        );
+        $admin = User::withTrashed()->firstOrNew(['email' => $adminEmail]);
 
-        $this->command->info("Admin user created: {$adminEmail} / password: password");
+        $admin->fill([
+            'name'              => 'Admin',
+            'email'             => $adminEmail,
+            'password'          => Hash::make($adminPassword),
+            'is_admin'          => true,
+            'email_verified_at' => now(),
+        ]);
+
+        // Restore if soft deleted
+        $admin->restore();
+        $admin->save();
+
+        $this->command->info("Admin user created: {$adminEmail} / password: {$adminPassword}");
         $this->command->warn("IMPORTANT: Change the admin password immediately after first login!");
     }
 }
