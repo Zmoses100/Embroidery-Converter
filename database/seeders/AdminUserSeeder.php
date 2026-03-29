@@ -15,6 +15,10 @@ class AdminUserSeeder extends Seeder
 
         $admin = User::withTrashed()->firstOrNew(['email' => $adminEmail]);
 
+        if ($admin->trashed()) {
+            $admin->restore();
+        }
+
         $admin->fill([
             'name'              => 'Admin',
             'email'             => $adminEmail,
@@ -23,11 +27,9 @@ class AdminUserSeeder extends Seeder
             'email_verified_at' => now(),
         ]);
 
-        // Restore if soft deleted
-        $admin->restore();
         $admin->save();
 
-        $this->command->info("Admin user created: {$adminEmail} / password: {$adminPassword}");
+        $this->command->info("Admin user ensured: {$adminEmail} (password set from ADMIN_PASSWORD env variable).");
         $this->command->warn("IMPORTANT: Change the admin password immediately after first login!");
     }
 }
