@@ -142,6 +142,12 @@ php artisan queue:work redis --sleep=3 --tries=3 --max-time=3600
 * * * * * cd /var/www/embroidery-converter && php artisan schedule:run >> /dev/null 2>&1
 ```
 
+### Environment tips
+
+- **Database host:** when running under Docker Compose, set `DB_HOST=db`. On Dokploy/Railway, use the service hostname provided by the platform (not `127.0.0.1` inside the container).
+- **Sessions:** the app uses the `database` session driver. Run `php artisan migrate --force` to ensure the `sessions` table exists.
+- **Mail smoke test:** verify SMTP quickly with `php artisan mail:test you@example.com`.
+
 ---
 
 ## Docker Installation (Optional)
@@ -210,4 +216,3 @@ If `pyembroidery` is not installed, the app operates in "graceful degradation" m
 ## License
 
 MIT License. See [LICENSE](LICENSE) file.
-
