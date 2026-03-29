@@ -51,4 +51,32 @@ class Plan extends Model
     {
         return $query->where('is_active', true);
     }
+
+    public static function freeDefaults(): array
+    {
+        return [
+            'name'                 => 'Free',
+            'slug'                 => 'free',
+            'description'          => 'Perfect for trying out Embroidery Converter.',
+            'price_monthly'        => 0,
+            'price_yearly'         => 0,
+            'conversions_per_day'  => 5,
+            'storage_limit_mb'     => 100,
+            'max_file_size_mb'     => 5,
+            'max_batch_size'       => 1,
+            'preview_enabled'      => false,
+            'history_enabled'      => true,
+            'api_access'           => false,
+            'priority_queue'       => false,
+            'is_active'            => true,
+            'is_featured'          => false,
+            'sort_order'           => 1,
+            'features' => [
+                '5 conversions per day',
+                '100 MB storage',
+                'All formats supported',
+                'Conversion history',
+            ],
+        ];
+    }
 }

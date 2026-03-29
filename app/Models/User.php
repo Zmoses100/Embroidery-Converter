@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Log;
 use Laravel\Cashier\Billable;
 
 class User extends Authenticatable implements MustVerifyEmail
@@ -64,10 +66,13 @@ class User extends Authenticatable implements MustVerifyEmail
         return (bool) $this->is_admin;
     }
 
-    /**
-     * Get current active plan details.
-     */
-    public function activePlan(): ?Plan
+     /**
+      * Get current active plan details.
+      *
+      * Returns a persisted Plan when available; in failure scenarios (e.g. missing plans table)
+      * this returns an in-memory Free plan instance so callers never receive null.
+      */
+     public function activePlan(): Plan
     {
         // Get plan from subscription
         if ($this->subscribed('default')) {
@@ -78,7 +83,30 @@ class User extends Authenticatable implements MustVerifyEmail
         }
 
         // Free plan
-        return Plan::where('slug', 'free')->first();
+        $freePlan = Plan::where('slug', 'free')->first();
+
+        if ($freePlan) {
+            return $freePlan;
+        }
+
+        $defaultFreePlan = Plan::freeDefaults();
+
+        // Ensure we always have a baseline plan to prevent null access / 500s
+        try {
+            return Plan::firstOrCreate(
+                ['slug' => 'free'],
+                $defaultFreePlan
+            );
+        } catch (QueryException $e) {
+            Log::warning('activePlan fallback creation failed; returning in-memory free plan', [
+                'user_id' => $this->id,
+                'error'   => $e->getMessage(),
+                'error_code' => $e->getCode(),
+            ]);
+
+            // This Plan instance is not persisted; it prevents nulls when the plans table is unavailable.
+            return new Plan($defaultFreePlan);
+        }
     }
 
     /**
@@ -86,9 +114,18 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function todayConversionCount(): int
     {
-        return ConversionUsage::where('user_id', $this->id)
-            ->where('date', today()->toDateString())
-            ->value('count') ?? 0;
+        try {
+            return ConversionUsage::where('user_id', $this->id)
+                ->where('date', today()->toDateString())
+                ->value('count') ?? 0;
+        } catch (QueryException $e) {
+            Log::warning('todayConversionCount failed; returning 0 as fallback', [
+                'user_id' => $this->id,
+                'error'   => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     /**
@@ -108,7 +145,16 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     public function storageUsedBytes(): int
     {
-        return (int) $this->embroideryFiles()->sum('size_bytes');
+        try {
+            return (int) $this->embroideryFiles()->sum('size_bytes');
+        } catch (QueryException $e) {
+            Log::warning('storageUsedBytes failed; returning 0 as fallback', [
+                'user_id' => $this->id,
+                'error'   => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
     }
 
     /**
