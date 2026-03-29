@@ -21,7 +21,7 @@ class ConversionUsage extends Model
     /**
      * Increment today's conversion count for a user.
      */
-    public static function increment(int $userId): void
+    public static function incrementForUser(int $userId): void
     {
         static::firstOrCreate(
             ['user_id' => $userId, 'date' => today()->toDateString()],

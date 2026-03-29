@@ -92,7 +92,7 @@ class ProcessConversion implements ShouldQueue
             ]);
 
             // Track usage
-            ConversionUsage::increment($this->user->id);
+            ConversionUsage::incrementForUser($this->user->id);
 
             // Notify user
             $this->user->notify(new ConversionCompleted($this->conversion, $outputFile));
