@@ -2,6 +2,40 @@
 @section('title', 'Plans')
 @section('content')
 <div class="max-w-5xl mx-auto space-y-8">
+    <!-- Admin Warning: Missing Stripe Configuration -->
+    @auth
+        @if(auth()->user()->isAdmin())
+            @php
+                $stripeNotConfigured = !config('cashier.key') || !config('cashier.secret');
+                $missingPriceIds = [];
+                
+                foreach($plans as $plan) {
+                    if (!$plan->isFree() && (!$plan->stripe_monthly_price_id || !$plan->stripe_yearly_price_id)) {
+                        $missingPriceIds[] = $plan->name;
+                    }
+                }
+            @endphp
+
+            @if($stripeNotConfigured)
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+                    <strong>⚠️ Admin Alert:</strong> Stripe credentials are not configured. 
+                    Please set <code class="bg-white px-2 py-1 rounded">STRIPE_KEY</code> and 
+                    <code class="bg-white px-2 py-1 rounded">STRIPE_SECRET</code> in your .env file.
+                    <a href="{{ route('admin.settings.index') }}" class="ml-2 underline font-medium">View Settings →</a>
+                </div>
+            @endif
+
+            @if(!empty($missingPriceIds))
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm text-yellow-800">
+                    <strong>⚠️ Admin Alert:</strong> The following plans are missing Stripe price IDs: 
+                    <strong>{{ implode(', ', $missingPriceIds) }}</strong>. 
+                    Users cannot subscribe until these are configured.
+                    <a href="{{ route('admin.plans.index') }}" class="ml-2 underline font-medium">Configure Plans →</a>
+                </div>
+            @endif
+        @endif
+    @endauth
+
     <div class="text-center">
         <h1 class="text-3xl font-bold text-gray-900">Choose Your Plan</h1>
         <p class="text-gray-500 mt-2">Simple, transparent pricing. Start free today.</p>

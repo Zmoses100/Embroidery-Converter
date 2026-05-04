@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Plan;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class PlanController extends Controller
 {
@@ -39,23 +40,86 @@ class PlanController extends Controller
             : $plan->stripe_monthly_price_id;
 
         if (!$priceId) {
-            return back()->withErrors(['plan' => 'This plan is not yet available for checkout. Please contact the administrator to configure pricing.']);
+            // Log the missing price ID for admin debugging
+            Log::warning('Stripe price ID missing', [
+                'plan_id' => $plan->id,
+                'plan_slug' => $plan->slug,
+                'interval' => $interval,
+                'user_id' => $user->id,
+            ]);
+
+            // Show user-friendly error
+            $errorMsg = "The {$plan->name} plan is not yet available for purchase. "
+                . "Please contact support or check back soon.";
+
+            // Show admin-specific error
+            if ($user->isAdmin()) {
+                $errorMsg .= " [Admin: Configure Stripe price IDs in Admin > Plans for {$plan->name} ({$interval}).] "
+                    . "Monthly ID: {$plan->stripe_monthly_price_id}, Yearly ID: {$plan->stripe_yearly_price_id}";
+            }
+
+            return back()->withErrors(['plan' => $errorMsg]);
+        }
+
+        // Verify Stripe is configured
+        if (!config('cashier.key') || !config('cashier.secret')) {
+            Log::error('Stripe configuration missing', [
+                'has_key' => (bool) config('cashier.key'),
+                'has_secret' => (bool) config('cashier.secret'),
+            ]);
+
+            $errorMsg = 'Stripe is not properly configured. Please try again later.';
+            if ($user->isAdmin()) {
+                $errorMsg .= ' [Admin: Set STRIPE_KEY and STRIPE_SECRET in .env]';
+            }
+
+            return back()->withErrors(['plan' => $errorMsg]);
         }
 
         // If user already has a subscription, swap to the new plan
         if ($user->subscribed('default')) {
-            $user->subscription('default')->swap($priceId);
+            try {
+                $user->subscription('default')->swap($priceId);
+                return redirect()->route('dashboard')->with('success', 'Plan changed successfully!');
+            } catch (\Exception $e) {
+                Log::error('Stripe plan swap failed', [
+                    'user_id' => $user->id,
+                    'plan_id' => $plan->id,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return redirect()->route('dashboard')->with('success', 'Plan changed successfully!');
+                $errorMsg = 'Failed to change your plan. Please try again.';
+                if ($user->isAdmin()) {
+                    $errorMsg .= ' [Error: ' . $e->getMessage() . ']';
+                }
+
+                return back()->withErrors(['plan' => $errorMsg]);
+            }
         }
 
         // New subscription - create Stripe checkout session
-        return $user->newSubscription('default', $priceId)
-            ->checkout([
-                'success_url' => route('subscription.success') . '?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url'  => route('plans.index'),
-                'customer_email' => $user->email,
+        try {
+            return $user->newSubscription('default', $priceId)
+                ->checkout([
+                    'success_url' => route('subscription.success') . '?session_id={CHECKOUT_SESSION_ID}',
+                    'cancel_url'  => route('plans.index'),
+                    'customer_email' => $user->email,
+                ]);
+        } catch (\Exception $e) {
+            Log::error('Stripe checkout creation failed', [
+                'user_id' => $user->id,
+                'plan_id' => $plan->id,
+                'price_id' => $priceId,
+                'error' => $e->getMessage(),
             ]);
+
+            $errorMsg = 'Failed to start checkout. Please try again.';
+            if ($user->isAdmin()) {
+                $errorMsg .= ' [Error: ' . $e->getMessage() . ']';
+            }
+
+            return back()->withErrors(['plan' => $errorMsg]);
+        }
     }
 
     /**

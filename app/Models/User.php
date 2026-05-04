@@ -77,12 +77,24 @@ class User extends Authenticatable implements MustVerifyEmail
         // Get plan from subscription
         if ($this->subscribed('default')) {
             $stripePriceId = $this->subscription('default')?->stripe_price;
-            return Plan::where('stripe_monthly_price_id', $stripePriceId)
-                ->orWhere('stripe_yearly_price_id', $stripePriceId)
-                ->first();
+            if ($stripePriceId) {
+                $plan = Plan::where('stripe_monthly_price_id', $stripePriceId)
+                    ->orWhere('stripe_yearly_price_id', $stripePriceId)
+                    ->first();
+                
+                if ($plan) {
+                    return $plan;
+                }
+                
+                // Log warning if subscription exists but plan not found
+                Log::warning('Subscription exists but plan not found for stripe price', [
+                    'user_id' => $this->id,
+                    'stripe_price_id' => $stripePriceId,
+                ]);
+            }
         }
 
-        // Free plan
+        // Free plan fallback
         $freePlan = Plan::where('slug', 'free')->first();
 
         if ($freePlan) {
