@@ -109,6 +109,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/', [FileController::class, 'store'])->name('store');
         Route::get('/{file}', [FileController::class, 'show'])->name('show');
         Route::get('/{file}/download', [FileController::class, 'download'])->name('download');
+        Route::get('/{file}/preview', [FileController::class, 'preview'])->name('preview');
         Route::post('/download-zip', [FileController::class, 'downloadZip'])->name('download-zip');
         Route::delete('/{file}', [FileController::class, 'destroy'])->name('destroy');
     });

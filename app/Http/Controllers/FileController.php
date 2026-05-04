@@ -225,6 +225,31 @@ class FileController extends Controller
     }
 
     /**
+     * Display a preview image for an embroidery file.
+     */
+    public function preview(EmbroideryFile $file)
+    {
+        if ((int) $file->user_id !== (int) auth()->id()) {
+            abort(403, 'You are not allowed to view this file.');
+        }
+
+        if (! $file->preview_path || ! $file->preview_generated) {
+            abort(404, 'Preview not available for this file.');
+        }
+
+        if (! Storage::disk($file->disk)->exists($file->preview_path)) {
+            abort(404, 'Preview file not found.');
+        }
+
+        $absolutePath = Storage::disk($file->disk)->path($file->preview_path);
+
+        return response()->file($absolutePath, [
+            'Content-Type' => 'image/png',
+            'Cache-Control' => 'private, max-age=3600',
+        ]);
+    }
+
+    /**
      * Download multiple files as a ZIP.
      */
     public function downloadZip(Request $request)

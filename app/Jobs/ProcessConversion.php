@@ -82,6 +82,39 @@ class ProcessConversion implements ShouldQueue
                 'metadata'      => $metadata ?: null,
             ]);
 
+            // Generate preview image (non-blocking - if it fails, conversion still completes)
+            try {
+                if ((bool) env('PYEMBROIDERY_AVAILABLE', false)) {
+                    $previewDir = Storage::disk('local')->path("embroidery/{$this->user->id}/previews");
+
+                    if (! is_dir($previewDir)) {
+                        mkdir($previewDir, 0755, true);
+                    }
+
+                    $previewPath = $converter->generatePreview($outputPath, $previewDir);
+
+                    if ($previewPath) {
+                        $relPreviewPath = "embroidery/{$this->user->id}/previews/" . basename($previewPath);
+
+                        $outputFile->update([
+                            'preview_path'     => $relPreviewPath,
+                            'preview_generated' => true,
+                        ]);
+
+                        Log::info('Preview generated for converted file', [
+                            'file_id' => $outputFile->id,
+                            'preview_path' => $relPreviewPath,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // Non-blocking: Log but don't fail the conversion
+                Log::warning('Preview generation failed for converted file', [
+                    'file_id' => $outputFile->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             // Mark conversion complete
             $this->conversion->update([
                 'status'             => 'completed',

@@ -82,6 +82,28 @@
             </div>
         @endif
 
+        <!-- Preview Image -->
+        @if($conversion->status === 'completed' && $conversion->outputFile)
+            @if($conversion->outputFile->preview_generated && $conversion->outputFile->preview_path)
+                <div class="bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border border-gray-200 p-6">
+                    <h3 class="text-sm font-semibold text-gray-700 mb-3">Converted Design Preview</h3>
+                    <div class="flex justify-center">
+                        <img src="{{ route('files.preview', $conversion->outputFile) }}"
+                             alt="Converted embroidery design preview"
+                             class="max-h-64 max-w-full rounded-lg shadow-sm border border-gray-200"
+                             loading="lazy">
+                    </div>
+                </div>
+            @else
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <p class="text-sm text-gray-600">
+                        <span class="inline-block mr-2">📋</span>
+                        Preview not available for this design.
+                    </p>
+                </div>
+            @endif
+        @endif
+
         <!-- Actions -->
         <div class="flex flex-wrap gap-3 pt-2" x-show="status === 'completed'">
             <a :href="downloadUrl" x-show="downloadUrl" x-cloak
