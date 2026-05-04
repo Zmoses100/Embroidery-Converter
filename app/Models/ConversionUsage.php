@@ -6,12 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 
 class ConversionUsage extends Model
 {
-    protected $fillable = ['user_id', 'date', 'count'];
+    protected $fillable = [
+        'user_id',
+        'date',
+        'count',
+    ];
 
-    protected function casts(): array
-    {
-        return ['date' => 'date'];
-    }
+    protected $casts = [
+        'date' => 'datetime',
+        'count' => 'integer',
+    ];
 
     public function user()
     {
@@ -20,16 +24,37 @@ class ConversionUsage extends Model
 
     /**
      * Increment today's conversion count for a user.
+     * SQLite stores date values as datetime strings, so we use the same value
+     * for lookup and insert to avoid duplicate unique-key errors.
      */
-    public static function increment(int $userId): void
+    public static function incrementForUser(int $userId): void
     {
-        static::firstOrCreate(
-            ['user_id' => $userId, 'date' => today()->toDateString()],
-            ['count'   => 0]
-        );
+        $date = today()->startOfDay()->toDateTimeString();
 
-        static::where('user_id', $userId)
-            ->where('date', today()->toDateString())
-            ->increment('count');
+        $usage = static::where('user_id', $userId)
+            ->where('date', $date)
+            ->first();
+
+        if (! $usage) {
+            $usage = static::create([
+                'user_id' => $userId,
+                'date' => $date,
+                'count' => 0,
+            ]);
+        }
+
+        $usage->increment('count');
+    }
+
+    /**
+     * Get today's conversion count for a user.
+     */
+    public static function todayCountForUser(int $userId): int
+    {
+        $date = today()->startOfDay()->toDateTimeString();
+
+        return (int) static::where('user_id', $userId)
+            ->where('date', $date)
+            ->value('count');
     }
 }

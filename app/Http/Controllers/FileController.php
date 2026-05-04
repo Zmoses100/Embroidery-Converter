@@ -6,7 +6,6 @@ use App\Models\AuditLog;
 use App\Models\EmbroideryFile;
 use App\Services\Embroidery\EmbroideryConverter;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use ZipArchive;
@@ -28,9 +27,10 @@ class FileController extends Controller
         $user = $request->user();
 
         $query = $user->embroideryFiles()
-            ->when($request->search, fn($q, $s) => $q->where('original_name', 'ilike', "%{$s}%"))
-            ->when($request->type, fn($q, $t) => $q->where('type', $t))
-            ->when($request->format, fn($q, $f) => $q->where('extension', $f))
+            // SQLite does not support ILIKE, so use LIKE for local Laragon.
+            ->when($request->search, fn ($q, $s) => $q->where('original_name', 'like', "%{$s}%"))
+            ->when($request->type, fn ($q, $t) => $q->where('type', $t))
+            ->when($request->format, fn ($q, $f) => $q->where('extension', strtolower($f)))
             ->latest();
 
         $files = $query->paginate(20)->withQueryString();
@@ -62,89 +62,128 @@ class FileController extends Controller
         $user = $request->user();
         $plan = $user->activePlan();
 
-        $maxSizeMb  = $plan ? $plan->max_file_size_mb : 10;
-        $maxSizeKb  = $maxSizeMb * 1024;
-        $allowedExt = implode(',', EmbroideryConverter::readableFormats());
+        $maxSizeMb = $plan ? $plan->max_file_size_mb : 10;
+        $maxSizeKb = $maxSizeMb * 1024;
+
+        $allowedExtensions = array_map(
+            fn ($ext) => strtolower(trim($ext)),
+            EmbroideryConverter::readableFormats()
+        );
+
+        $allowedText = implode(',', $allowedExtensions);
 
         $request->validate([
-            'files'   => 'required|array|max:20',
-            'files.*' => "required|file|max:{$maxSizeKb}|mimes:{$allowedExt}",
+            'files' => ['required', 'array', 'max:20'],
+            'files.*' => [
+                'required',
+                'file',
+                'max:' . $maxSizeKb,
+                function ($attribute, $file, $fail) use ($allowedExtensions, $allowedText) {
+                    $extension = strtolower($file->getClientOriginalExtension());
+
+                    if (! in_array($extension, $allowedExtensions, true)) {
+                        $fail("Only supported embroidery formats are allowed: {$allowedText}");
+                    }
+                },
+            ],
         ], [
-            'files.*.mimes' => "Only supported embroidery formats are allowed: {$allowedExt}",
-            'files.*.max'   => "Each file must be smaller than {$maxSizeMb} MB.",
+            'files.required' => 'Please choose at least one embroidery file.',
+            'files.array' => 'Invalid upload request.',
+            'files.max' => 'You can upload a maximum of 20 files at once.',
+            'files.*.required' => 'Please choose a valid embroidery file.',
+            'files.*.file' => 'Each upload must be a valid file.',
+            'files.*.max' => "Each file must be smaller than {$maxSizeMb} MB.",
         ]);
 
         $uploaded = [];
-        $errors   = [];
+        $errors = [];
 
         foreach ($request->file('files') as $file) {
             $sizeBytes = $file->getSize();
+            $originalName = $file->getClientOriginalName();
+            $ext = strtolower($file->getClientOriginalExtension());
 
-            // Check storage limit
-            if (!$user->hasStorageFor($sizeBytes)) {
-                $errors[] = "Storage limit reached. Cannot upload {$file->getClientOriginalName()}.";
+            // Extra safety check after validation.
+            if (! in_array($ext, $allowedExtensions, true)) {
+                $errors[] = "Unsupported file format for {$originalName}.";
                 continue;
             }
 
-            $ext        = strtolower($file->getClientOriginalExtension());
-            $storedName = Str::uuid() . '.' . $ext;
-            $path       = $file->storeAs("embroidery/{$user->id}/originals", $storedName, 'local');
+            // Check storage limit.
+            if (! $user->hasStorageFor($sizeBytes)) {
+                $errors[] = "Storage limit reached. Cannot upload {$originalName}.";
+                continue;
+            }
 
-            // Extract metadata
+            $storedName = Str::uuid() . '.' . $ext;
+            $path = $file->storeAs("embroidery/{$user->id}/originals", $storedName, 'local');
+
+            // Extract metadata.
             $metadata = [];
             $absolutePath = Storage::disk('local')->path($path);
+
             try {
                 $metadata = $this->converter->extractMetadata($absolutePath);
-            } catch (\Exception $e) {
-                // Non-fatal - continue without metadata
+            } catch (\Throwable $e) {
+                // Non-fatal. Continue without metadata.
             }
 
             $embFile = EmbroideryFile::create([
-                'user_id'       => $user->id,
-                'original_name' => $file->getClientOriginalName(),
-                'stored_name'   => $storedName,
-                'disk'          => 'local',
-                'path'          => $path,
-                'extension'     => $ext,
-                'size_bytes'    => $sizeBytes,
-                'type'          => 'original',
-                'stitch_count'  => $metadata['stitch_count'] ?? null,
-                'color_count'   => $metadata['color_count'] ?? null,
+                'user_id' => $user->id,
+                'original_name' => $originalName,
+                'stored_name' => $storedName,
+                'disk' => 'local',
+                'path' => $path,
+                'extension' => $ext,
+                'size_bytes' => $sizeBytes,
+                'type' => 'original',
+                'stitch_count' => $metadata['stitch_count'] ?? null,
+                'color_count' => $metadata['color_count'] ?? null,
                 'thread_colors' => $metadata['thread_colors'] ?? null,
-                'width_mm'      => $metadata['width_mm'] ?? null,
-                'height_mm'     => $metadata['height_mm'] ?? null,
-                'metadata'      => $metadata ?: null,
+                'width_mm' => $metadata['width_mm'] ?? null,
+                'height_mm' => $metadata['height_mm'] ?? null,
+                'metadata' => $metadata ?: null,
             ]);
 
-            // Generate preview (async-friendly, won't block upload)
-            if (env('PYEMBROIDERY_AVAILABLE')) {
+            // Generate preview if pyembroidery is available.
+            if ((bool) env('PYEMBROIDERY_AVAILABLE', false)) {
                 try {
                     $previewDir = Storage::disk('local')->path("embroidery/{$user->id}/previews");
-                    if (!is_dir($previewDir)) mkdir($previewDir, 0755, true);
+
+                    if (! is_dir($previewDir)) {
+                        mkdir($previewDir, 0755, true);
+                    }
+
                     $previewPath = $this->converter->generatePreview($absolutePath, $previewDir);
+
                     if ($previewPath) {
                         $relPath = "embroidery/{$user->id}/previews/" . basename($previewPath);
-                        $embFile->update(['preview_path' => $relPath, 'preview_generated' => true]);
+
+                        $embFile->update([
+                            'preview_path' => $relPath,
+                            'preview_generated' => true,
+                        ]);
                     }
-                } catch (\Exception $e) {
-                    // Non-fatal
+                } catch (\Throwable $e) {
+                    // Non-fatal. Upload should still succeed.
                 }
             }
 
             AuditLog::log('file.uploaded', $user->id, EmbroideryFile::class, $embFile->id, [], [
                 'filename' => $embFile->original_name,
-                'size'     => $embFile->size_bytes,
+                'size' => $embFile->size_bytes,
             ]);
 
             $uploaded[] = $embFile;
         }
 
-        if (empty($uploaded) && !empty($errors)) {
-            return back()->withErrors(['files' => $errors]);
+        if (empty($uploaded) && ! empty($errors)) {
+            return back()->withErrors(['files' => $errors])->withInput();
         }
 
         $message = count($uploaded) . ' file(s) uploaded successfully.';
-        if (!empty($errors)) {
+
+        if (! empty($errors)) {
             $message .= ' ' . count($errors) . ' file(s) failed.';
         }
 
@@ -158,7 +197,9 @@ class FileController extends Controller
      */
     public function show(EmbroideryFile $file)
     {
-        $this->authorize('view', $file);
+        if ((int) $file->user_id !== (int) auth()->id()) {
+            abort(403, 'You are not allowed to view this file.');
+        }
 
         $conversions = $file->conversions()->with('outputFile')->latest()->get();
 
@@ -170,9 +211,11 @@ class FileController extends Controller
      */
     public function download(EmbroideryFile $file)
     {
-        $this->authorize('view', $file);
+        if ((int) $file->user_id !== (int) auth()->id()) {
+            abort(403, 'You are not allowed to download this file.');
+        }
 
-        if (!Storage::disk($file->disk)->exists($file->path)) {
+        if (! Storage::disk($file->disk)->exists($file->path)) {
             abort(404, 'File not found.');
         }
 
@@ -186,9 +229,12 @@ class FileController extends Controller
      */
     public function downloadZip(Request $request)
     {
-        $request->validate(['file_ids' => 'required|array|max:50']);
+        $request->validate([
+            'file_ids' => ['required', 'array', 'max:50'],
+        ]);
 
-        $user  = $request->user();
+        $user = $request->user();
+
         $files = EmbroideryFile::whereIn('id', $request->file_ids)
             ->where('user_id', $user->id)
             ->get();
@@ -198,25 +244,31 @@ class FileController extends Controller
         }
 
         $zipPath = sys_get_temp_dir() . '/embroidery_' . Str::uuid() . '.zip';
-        $zip     = new ZipArchive();
+        $zip = new ZipArchive();
 
         if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
             abort(500, 'Could not create ZIP file.');
         }
 
         $usedNames = [];
+
         foreach ($files as $file) {
             $absPath = Storage::disk($file->disk)->path($file->path);
+
             if (file_exists($absPath)) {
                 $zipName = $file->original_name;
+
                 if (isset($usedNames[$zipName])) {
                     $usedNames[$zipName]++;
+
                     $ext = pathinfo($zipName, PATHINFO_EXTENSION);
                     $base = pathinfo($zipName, PATHINFO_FILENAME);
+
                     $zipName = $base . '_' . $usedNames[$zipName] . '.' . $ext;
                 } else {
                     $usedNames[$zipName] = 1;
                 }
+
                 $zip->addFile($absPath, $zipName);
             }
         }
@@ -231,7 +283,9 @@ class FileController extends Controller
      */
     public function destroy(EmbroideryFile $file)
     {
-        $this->authorize('delete', $file);
+        if ((int) $file->user_id !== (int) auth()->id()) {
+            abort(403, 'You are not allowed to delete this file.');
+        }
 
         $file->deletePhysicalFile();
         $file->delete();

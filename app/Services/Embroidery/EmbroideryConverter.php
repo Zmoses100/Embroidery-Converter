@@ -3,20 +3,13 @@
 namespace App\Services\Embroidery;
 
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use Symfony\Component\Process\Process;
 
 /**
  * EmbroideryConverter
  *
- * Handles embroidery file format conversion using pyembroidery (Python) via shell command.
- *
- * Two conversion paths:
- *   1. Python/pyembroidery-based: Full conversion with metadata extraction (recommended).
- *   2. PHP-based fallback: Basic binary copy with format header rewrite for simple formats.
- *
- * To enable full conversion, install pyembroidery:
- *   pip3 install pyembroidery
- * And set PYEMBROIDERY_AVAILABLE=true in .env
+ * Handles embroidery file format conversion using pyembroidery.
+ * Windows/Laragon-safe version.
  */
 class EmbroideryConverter
 {
@@ -58,66 +51,77 @@ class EmbroideryConverter
     ];
 
     /**
-     * Formats that cannot be fully preserved during conversion (lossy).
+     * Formats that cannot be fully preserved during conversion.
      */
     private const LOSSY_FORMATS = ['emb', 'pec', 'jbf'];
 
     private string $pythonBin;
-    private bool   $pyembroideryAvailable;
+    private bool $pyembroideryAvailable;
 
     public function __construct()
     {
-        $this->pythonBin            = config('app.python_bin', env('PYTHON_BIN', '/usr/bin/python3'));
-        $this->pyembroideryAvailable = (bool) env('PYEMBROIDERY_AVAILABLE', false);
+        // Windows/Laragon should use "py".
+        // Linux production can use PYTHON_BIN=/usr/bin/python3.
+        $this->pythonBin = env(
+            'PYTHON_BIN',
+            env('PYEMBROIDERY_PYTHON_BIN', PHP_OS_FAMILY === 'Windows' ? 'py' : 'python3')
+        );
+
+        $this->pyembroideryAvailable = filter_var(
+            env('PYEMBROIDERY_AVAILABLE', false),
+            FILTER_VALIDATE_BOOLEAN
+        );
     }
 
     /**
      * Convert an embroidery file from one format to another.
-     *
-     * @param string $sourcePath  Absolute path to source file.
-     * @param string $targetFormat Target format extension (e.g. 'dst').
-     * @param string $outputDir   Directory to write output file.
-     * @return ConversionResult
      */
     public function convert(string $sourcePath, string $targetFormat, string $outputDir): ConversionResult
     {
         $targetFormat = strtolower($targetFormat);
-        $sourceExt    = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
-        $baseName     = pathinfo($sourcePath, PATHINFO_FILENAME);
-        $outputPath   = rtrim($outputDir, '/') . '/' . $baseName . '.' . $targetFormat;
+        $sourceExt = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION));
+        $baseName = pathinfo($sourcePath, PATHINFO_FILENAME);
 
-        // Validate formats
-        if (!isset(self::SUPPORTED_FORMATS[$sourceExt])) {
+        $outputDir = rtrim($outputDir, DIRECTORY_SEPARATOR . '/\\');
+
+        if (! is_dir($outputDir)) {
+            mkdir($outputDir, 0755, true);
+        }
+
+        $outputPath = $outputDir . DIRECTORY_SEPARATOR . $baseName . '.' . $targetFormat;
+
+        if (! isset(self::SUPPORTED_FORMATS[$sourceExt])) {
             return ConversionResult::failure("Source format '{$sourceExt}' is not supported.");
         }
-        if (!isset(self::SUPPORTED_FORMATS[$targetFormat])) {
+
+        if (! isset(self::SUPPORTED_FORMATS[$targetFormat])) {
             return ConversionResult::failure("Target format '{$targetFormat}' is not supported.");
         }
-        if (!self::SUPPORTED_FORMATS[$targetFormat]['write']) {
+
+        if (! self::SUPPORTED_FORMATS[$targetFormat]['write']) {
             return ConversionResult::failure("Writing to format '{$targetFormat}' is not supported.");
         }
-        if (!file_exists($sourcePath)) {
-            return ConversionResult::failure("Source file not found.");
+
+        if (! file_exists($sourcePath)) {
+            return ConversionResult::failure("Source file not found: {$sourcePath}");
         }
 
-        // Check lossy conversion
         $warnings = [];
-        if (in_array($targetFormat, self::LOSSY_FORMATS) || in_array($sourceExt, self::LOSSY_FORMATS)) {
-            $warnings[] = "Conversion involving '{$sourceExt}' or '{$targetFormat}' may lose some design properties (colors, labels).";
+
+        if (in_array($targetFormat, self::LOSSY_FORMATS, true) || in_array($sourceExt, self::LOSSY_FORMATS, true)) {
+            $warnings[] = "Conversion involving '{$sourceExt}' or '{$targetFormat}' may lose some design properties.";
         }
+
         if ($sourceExt === 'dst' && $targetFormat !== 'dst') {
-            $warnings[] = "DST format does not store color information natively. Thread colors may not be preserved.";
+            $warnings[] = 'DST format does not store color information natively. Thread colors may not be preserved.';
         }
 
-        // Attempt pyembroidery conversion
         if ($this->pyembroideryAvailable) {
-            return $this->convertWithPyembroidery($sourcePath, $outputPath, $targetFormat, $warnings);
+            return $this->convertWithPyembroidery($sourcePath, $outputPath, $warnings);
         }
 
-        // Fallback: inform user pyembroidery is not installed
         return ConversionResult::failure(
-            'Embroidery conversion engine (pyembroidery) is not installed. ' .
-            'Please run: pip3 install pyembroidery  and set PYEMBROIDERY_AVAILABLE=true in .env',
+            'Embroidery conversion engine pyembroidery is not enabled. Run: py -m pip install pyembroidery and set PYEMBROIDERY_AVAILABLE=true in .env',
             $warnings
         );
     }
@@ -128,38 +132,63 @@ class EmbroideryConverter
     private function convertWithPyembroidery(
         string $sourcePath,
         string $outputPath,
-        string $targetFormat,
-        array  $warnings = []
+        array $warnings = []
     ): ConversionResult {
-        // Build a secure Python one-liner
-        $script = sprintf(
-            'import pyembroidery; '
-            . 'pattern = pyembroidery.read(%s); '
-            . 'pyembroidery.write(pattern, %s)',
-            var_export($sourcePath, true),
-            var_export($outputPath, true)
-        );
+        $script = <<<'PYTHON'
+import pyembroidery
+import sys
+import os
 
-        $command = escapeshellcmd($this->pythonBin) . ' -c ' . escapeshellarg($script) . ' 2>&1';
+source = sys.argv[1]
+target = sys.argv[2]
+
+pattern = pyembroidery.read(source)
+
+if pattern is None:
+    raise Exception("pyembroidery could not read the source file.")
+
+output_dir = os.path.dirname(target)
+
+if output_dir and not os.path.exists(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+
+pyembroidery.write(pattern, target)
+
+if not os.path.exists(target):
+    raise Exception("Output file was not created.")
+PYTHON;
+
         $startTime = microtime(true);
-        exec($command, $output, $returnCode);
+
+        $process = new Process([
+            $this->pythonBin,
+            '-c',
+            $script,
+            $sourcePath,
+            $outputPath,
+        ]);
+
+        $process->setTimeout(120);
+        $process->run();
+
         $elapsedMs = (int) ((microtime(true) - $startTime) * 1000);
 
-        if ($returnCode !== 0 || !file_exists($outputPath)) {
-            $errorMsg = implode("\n", $output);
+        if (! $process->isSuccessful() || ! file_exists($outputPath)) {
+            $errorMsg = trim($process->getErrorOutput() . "\n" . $process->getOutput());
+
             Log::error('pyembroidery conversion failed', [
-                'source'  => $sourcePath,
-                'target'  => $outputPath,
-                'error'   => $errorMsg,
+                'python_bin' => $this->pythonBin,
+                'source' => $sourcePath,
+                'target' => $outputPath,
+                'error' => $errorMsg,
             ]);
 
             return ConversionResult::failure(
-                'Conversion failed: ' . ($errorMsg ?: 'Unknown error'),
+                'Conversion failed: ' . ($errorMsg ?: 'Unknown pyembroidery error.'),
                 $warnings
             );
         }
 
-        // Extract metadata from converted file
         $metadata = $this->extractMetadata($sourcePath);
 
         return ConversionResult::success($outputPath, $elapsedMs, $warnings, $metadata);
@@ -170,91 +199,141 @@ class EmbroideryConverter
      */
     public function extractMetadata(string $filePath): array
     {
-        if (!$this->pyembroideryAvailable) {
+        if (! $this->pyembroideryAvailable || ! file_exists($filePath)) {
             return [];
         }
 
-        $script = <<<PYTHON
-import pyembroidery, json, sys
+        $script = <<<'PYTHON'
+import pyembroidery
+import json
+import sys
 
 try:
     pattern = pyembroidery.read(sys.argv[1])
+
     if pattern is None:
         print(json.dumps({}))
         sys.exit(0)
-    
+
     colors = []
+
     for thread in pattern.threadlist:
         colors.append({
-            'name': getattr(thread, 'name', ''),
-            'color': '#{:06X}'.format(getattr(thread, 'color', 0)),
-            'catalog_number': getattr(thread, 'catalog_number', ''),
+            "name": getattr(thread, "name", "") or "",
+            "color": "#{:06X}".format(getattr(thread, "color", 0) or 0),
+            "catalog_number": getattr(thread, "catalog_number", "") or "",
         })
-    
+
     bounds = pattern.bounds()
-    width  = round((bounds[2] - bounds[0]) / 10, 2) if bounds else None
-    height = round((bounds[3] - bounds[1]) / 10, 2) if bounds else None
-    
+
+    width = None
+    height = None
+
+    if bounds:
+        width = round((bounds[2] - bounds[0]) / 10, 2)
+        height = round((bounds[3] - bounds[1]) / 10, 2)
+
     info = {
-        'stitch_count': len(pattern.stitches),
-        'color_count':  len(pattern.threadlist),
-        'thread_colors': colors,
-        'width_mm':  width,
-        'height_mm': height,
+        "stitch_count": len(pattern.stitches),
+        "color_count": len(pattern.threadlist),
+        "thread_colors": colors,
+        "width_mm": width,
+        "height_mm": height,
     }
+
     print(json.dumps(info))
 except Exception as e:
-    print(json.dumps({'error': str(e)}))
+    print(json.dumps({"error": str(e)}))
 PYTHON;
 
-        // Write script to temp file
-        $tmpScript = sys_get_temp_dir() . '/emb_meta_' . uniqid() . '.py';
-        file_put_contents($tmpScript, $script);
+        $process = new Process([
+            $this->pythonBin,
+            '-c',
+            $script,
+            $filePath,
+        ]);
 
-        $command = escapeshellcmd($this->pythonBin) . ' '
-            . escapeshellarg($tmpScript) . ' '
-            . escapeshellarg($filePath) . ' 2>/dev/null';
+        $process->setTimeout(60);
+        $process->run();
 
-        exec($command, $output, $code);
-        @unlink($tmpScript);
+        if (! $process->isSuccessful()) {
+            Log::warning('pyembroidery metadata extraction failed', [
+                'python_bin' => $this->pythonBin,
+                'file' => $filePath,
+                'error' => trim($process->getErrorOutput() . "\n" . $process->getOutput()),
+            ]);
 
-        if ($code !== 0 || empty($output)) {
             return [];
         }
 
-        $data = json_decode(implode('', $output), true);
+        $json = trim($process->getOutput());
+        $data = json_decode($json, true);
 
         return is_array($data) ? $data : [];
     }
 
     /**
      * Generate a preview PNG from an embroidery file using pyembroidery.
-     *
-     * @param string $filePath Absolute path to embroidery file
-     * @param string $outputDir Directory to save preview PNG
-     * @return string|null Path to generated PNG, or null on failure
      */
     public function generatePreview(string $filePath, string $outputDir): ?string
     {
-        if (!$this->pyembroideryAvailable) {
+        if (! $this->pyembroideryAvailable || ! file_exists($filePath)) {
             return null;
         }
 
-        $baseName   = pathinfo($filePath, PATHINFO_FILENAME);
-        $outputPath = rtrim($outputDir, '/') . '/' . $baseName . '_preview.png';
+        $outputDir = rtrim($outputDir, DIRECTORY_SEPARATOR . '/\\');
 
-        $script = sprintf(
-            'import pyembroidery; '
-            . 'pattern = pyembroidery.read(%s); '
-            . 'pyembroidery.write(pattern, %s)',
-            var_export($filePath, true),
-            var_export($outputPath, true)
-        );
+        if (! is_dir($outputDir)) {
+            mkdir($outputDir, 0755, true);
+        }
 
-        $command = escapeshellcmd($this->pythonBin) . ' -c ' . escapeshellarg($script) . ' 2>/dev/null';
-        exec($command, $output, $code);
+        $baseName = pathinfo($filePath, PATHINFO_FILENAME);
+        $outputPath = $outputDir . DIRECTORY_SEPARATOR . $baseName . '_preview.png';
 
-        return ($code === 0 && file_exists($outputPath)) ? $outputPath : null;
+        $script = <<<'PYTHON'
+import pyembroidery
+import sys
+import os
+
+source = sys.argv[1]
+target = sys.argv[2]
+
+pattern = pyembroidery.read(source)
+
+if pattern is None:
+    sys.exit(1)
+
+output_dir = os.path.dirname(target)
+
+if output_dir and not os.path.exists(output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+
+pyembroidery.write(pattern, target)
+PYTHON;
+
+        $process = new Process([
+            $this->pythonBin,
+            '-c',
+            $script,
+            $filePath,
+            $outputPath,
+        ]);
+
+        $process->setTimeout(60);
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            Log::warning('pyembroidery preview generation failed', [
+                'python_bin' => $this->pythonBin,
+                'file' => $filePath,
+                'target' => $outputPath,
+                'error' => trim($process->getErrorOutput() . "\n" . $process->getOutput()),
+            ]);
+
+            return null;
+        }
+
+        return file_exists($outputPath) ? $outputPath : null;
     }
 
     /**
@@ -262,7 +341,7 @@ PYTHON;
      */
     public static function readableFormats(): array
     {
-        return array_keys(array_filter(self::SUPPORTED_FORMATS, fn($f) => $f['read']));
+        return array_keys(array_filter(self::SUPPORTED_FORMATS, fn ($f) => $f['read']));
     }
 
     /**
@@ -270,7 +349,7 @@ PYTHON;
      */
     public static function writableFormats(): array
     {
-        return array_keys(array_filter(self::SUPPORTED_FORMATS, fn($f) => $f['write']));
+        return array_keys(array_filter(self::SUPPORTED_FORMATS, fn ($f) => $f['write']));
     }
 
     /**
