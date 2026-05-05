@@ -60,6 +60,11 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(AuditLog::class);
     }
 
+    public function paypalTransactions()
+    {
+        return $this->hasMany(PaypalTransaction::class);
+    }
+
     // Helpers
     public function isAdmin(): bool
     {
@@ -74,7 +79,17 @@ class User extends Authenticatable implements MustVerifyEmail
       */
      public function activePlan(): Plan
     {
-        // Get plan from subscription
+        // First check for active PayPal subscription
+        $paypalTransaction = $this->paypalTransactions()
+            ->where('status', 'active')
+            ->latest()
+            ->first();
+        
+        if ($paypalTransaction) {
+            return $paypalTransaction->plan;
+        }
+
+        // Get plan from Stripe subscription
         if ($this->subscribed('default')) {
             $stripePriceId = $this->subscription('default')?->stripe_price;
             if ($stripePriceId) {

@@ -12,6 +12,7 @@ class Plan extends Model
     protected $fillable = [
         'name', 'slug', 'description', 'price_monthly', 'price_yearly',
         'stripe_monthly_price_id', 'stripe_yearly_price_id',
+        'paypal_product_id', 'paypal_plan_id_monthly', 'paypal_plan_id_yearly',
         'conversions_per_day', 'storage_limit_mb', 'max_file_size_mb',
         'max_batch_size', 'preview_enabled', 'history_enabled',
         'api_access', 'priority_queue', 'is_active', 'is_featured',
@@ -33,6 +34,13 @@ class Plan extends Model
         ];
     }
 
+    // Relationships
+    public function paypalTransactions()
+    {
+        return $this->hasMany(PaypalTransaction::class);
+    }
+
+    // Helpers
     public function isFree(): bool
     {
         return $this->slug === 'free';

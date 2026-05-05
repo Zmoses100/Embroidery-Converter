@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\ConversionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\FileController;
+use App\Http\Controllers\PayPalController;
 use App\Http\Controllers\PlanController;
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
@@ -131,6 +132,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/cancel', [PlanController::class, 'cancel'])->name('cancel');
         Route::post('/resume', [PlanController::class, 'resume'])->name('resume');
     });
+
+    // PayPal Subscriptions
+    Route::prefix('paypal')->name('paypal.')->group(function () {
+        Route::post('/checkout/{plan}', [PayPalController::class, 'checkout'])->name('checkout');
+        Route::get('/success', [PayPalController::class, 'success'])->name('success');
+        Route::get('/cancel', [PayPalController::class, 'cancel'])->name('cancel');
+    });
 });
 
 /*
@@ -171,3 +179,12 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
 */
 Route::post('/stripe/webhook', [\Laravel\Cashier\Http\Controllers\WebhookController::class, 'handleWebhook'])
     ->name('cashier.webhook');
+
+/*
+|--------------------------------------------------------------------------
+| PayPal Webhook
+|--------------------------------------------------------------------------
+*/
+Route::post('/paypal/webhook', [PayPalController::class, 'webhook'])
+    ->name('paypal.webhook')
+    ->withoutMiddleware(\App\Http\Middleware\VerifyCsrfToken::class);

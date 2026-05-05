@@ -97,14 +97,45 @@
                             </form>
                         @endif
                     @else
-                        <form method="POST" action="{{ route('subscription.checkout', $plan) }}">
-                            @csrf
-                            <input type="hidden" name="interval" value="monthly">
-                            <button type="submit"
-                                    class="w-full py-3 {{ $plan->is_featured ? 'bg-primary-600 text-white hover:bg-primary-700' : 'bg-gray-900 text-white hover:bg-gray-800' }} text-sm font-medium rounded-xl transition-colors">
-                                Get {{ $plan->name }}
+                        <!-- Billing Interval Selector -->
+                        <div class="mb-4 flex gap-2 bg-gray-100 rounded-lg p-1">
+                            <button type="button" onclick="setInterval(this, 'monthly', {{ $plan->id }})"
+                                    class="flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors monthly-btn-{{ $plan->id }} bg-white text-gray-900 shadow-sm">
+                                Monthly
                             </button>
-                        </form>
+                            <button type="button" onclick="setInterval(this, 'yearly', {{ $plan->id }})"
+                                    class="flex-1 py-2 px-3 rounded-md text-xs font-medium transition-colors yearly-btn-{{ $plan->id }} text-gray-700 hover:bg-gray-50">
+                                Yearly
+                            </button>
+                        </div>
+
+                        <!-- Payment Method Selector -->
+                        <div class="space-y-2" id="payment-methods-{{ $plan->id }}">
+                            <!-- Stripe Payment (Existing) -->
+                            <form method="POST" action="{{ route('subscription.checkout', $plan) }}" class="stripe-form-{{ $plan->id }}">
+                                @csrf
+                                <input type="hidden" name="interval" value="monthly" class="interval-input-{{ $plan->id }}">
+                                <button type="submit"
+                                        class="w-full py-2 {{ $plan->is_featured ? 'bg-primary-600 text-white hover:bg-primary-700' : 'bg-gray-900 text-white hover:bg-gray-800' }} text-xs font-medium rounded-lg transition-colors">
+                                    Stripe
+                                </button>
+                            </form>
+                            
+                            <!-- PayPal Payment Option -->
+                            @if(config('services.paypal.client_id') && config('services.paypal.secret'))
+                                <form method="POST" action="{{ route('paypal.checkout', $plan) }}" class="paypal-form-{{ $plan->id }}">
+                                    @csrf
+                                    <input type="hidden" name="interval" value="monthly" class="interval-input-{{ $plan->id }}">
+                                    <button type="submit"
+                                            class="w-full py-2 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2">
+                                        <svg class="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M9.5 2h-6a1.5 1.5 0 00-1.5 1.5v17A1.5 1.5 0 003.5 22h6a1.5 1.5 0 001.5-1.5V3.5A1.5 1.5 0 009.5 2zM13 2h6a1.5 1.5 0 011.5 1.5v17a1.5 1.5 0 01-1.5 1.5h-6a1.5 1.5 0 01-1.5-1.5V3.5A1.5 1.5 0 0113 2z"/>
+                                        </svg>
+                                        PayPal
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
                     @endif
                 @else
                     <a href="{{ route('register') }}"
@@ -121,4 +152,26 @@
         <p class="mt-1">Questions? Email us at <a href="mailto:support@example.com" class="text-primary-600 hover:underline">support@example.com</a></p>
     </div>
 </div>
+
+<script>
+function setInterval(button, interval, planId) {
+    // Update button styles
+    document.querySelector('.monthly-btn-' + planId).classList.toggle('bg-white');
+    document.querySelector('.monthly-btn-' + planId).classList.toggle('text-gray-900');
+    document.querySelector('.monthly-btn-' + planId).classList.toggle('shadow-sm');
+    document.querySelector('.monthly-btn-' + planId).classList.toggle('text-gray-700');
+    document.querySelector('.monthly-btn-' + planId).classList.toggle('hover:bg-gray-50');
+    
+    document.querySelector('.yearly-btn-' + planId).classList.toggle('bg-white');
+    document.querySelector('.yearly-btn-' + planId).classList.toggle('text-gray-900');
+    document.querySelector('.yearly-btn-' + planId).classList.toggle('shadow-sm');
+    document.querySelector('.yearly-btn-' + planId).classList.toggle('text-gray-700');
+    document.querySelector('.yearly-btn-' + planId).classList.toggle('hover:bg-gray-50');
+    
+    // Update hidden form inputs
+    document.querySelectorAll('.interval-input-' + planId).forEach(input => {
+        input.value = interval;
+    });
+}
+</script>
 @endsection

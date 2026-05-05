@@ -59,6 +59,40 @@
             </div>
         </div>
 
+        <hr class="my-2">
+
+        <!-- PayPal Configuration Section -->
+        <div class="space-y-4">
+            <div class="rounded-lg bg-blue-50 border border-blue-200 p-4">
+                <p class="text-xs text-blue-800">
+                    <strong>PayPal Setup:</strong> Leave blank to auto-create PayPal product and plan on first user checkout. Or paste manually created IDs from your PayPal account.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">PayPal Product ID</label>
+                    <input type="text" name="paypal_product_id" value="{{ old('paypal_product_id', $plan->paypal_product_id) }}" placeholder="PROD_..."
+                           class="mt-1 w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="mt-1 text-xs text-gray-500">Product from PayPal Catalog</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">PayPal Monthly Plan ID</label>
+                    <input type="text" name="paypal_plan_id_monthly" value="{{ old('paypal_plan_id_monthly', $plan->paypal_plan_id_monthly) }}" placeholder="I-..."
+                           class="mt-1 w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="mt-1 text-xs text-gray-500">Monthly subscription plan</p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">PayPal Yearly Plan ID</label>
+                    <input type="text" name="paypal_plan_id_yearly" value="{{ old('paypal_plan_id_yearly', $plan->paypal_plan_id_yearly) }}" placeholder="I-..."
+                           class="mt-1 w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="mt-1 text-xs text-gray-500">Yearly subscription plan</p>
+                </div>
+            </div>
+        </div>
+
+        <hr class="my-2">
+
         <div class="grid grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700">Conversions/Day (-1 = unlimited)</label>
